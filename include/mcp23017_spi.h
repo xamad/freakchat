@@ -1,6 +1,8 @@
 /**
  * Bit-banged SPI implementation via MCP23017 GPIO expander
  * For connecting SX1262 LoRa module to M5Stack Cardputer
+ *
+ * Uses direct I2C register access (no external library)
  */
 
 #ifndef MCP23017_SPI_H
@@ -8,8 +10,30 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <Adafruit_MCP23X17.h>
 #include "config.h"
+
+// MCP23017 Register addresses (IOCON.BANK = 0)
+#define MCP_IODIRA   0x00  // I/O direction register A
+#define MCP_IODIRB   0x01  // I/O direction register B
+#define MCP_IPOLA    0x02  // Input polarity A
+#define MCP_IPOLB    0x03  // Input polarity B
+#define MCP_GPINTENA 0x04  // Interrupt-on-change A
+#define MCP_GPINTENB 0x05  // Interrupt-on-change B
+#define MCP_DEFVALA  0x06  // Default compare A
+#define MCP_DEFVALB  0x07  // Default compare B
+#define MCP_INTCONA  0x08  // Interrupt control A
+#define MCP_INTCONB  0x09  // Interrupt control B
+#define MCP_IOCON    0x0A  // Configuration
+#define MCP_GPPUA    0x0C  // Pull-up resistors A
+#define MCP_GPPUB    0x0D  // Pull-up resistors B
+#define MCP_INTFA    0x0E  // Interrupt flag A
+#define MCP_INTFB    0x0F  // Interrupt flag B
+#define MCP_INTCAPA  0x10  // Interrupt capture A
+#define MCP_INTCAPB  0x11  // Interrupt capture B
+#define MCP_GPIOA    0x12  // Port A
+#define MCP_GPIOB    0x13  // Port B
+#define MCP_OLATA    0x14  // Output latch A
+#define MCP_OLATB    0x15  // Output latch B
 
 class MCP23017_SPI {
 public:
@@ -85,16 +109,26 @@ public:
     bool readDIO1();
 
     /**
-     * Get the MCP23017 instance for direct access if needed
+     * Get the I2C address found
      */
-    Adafruit_MCP23X17& getMCP() { return _mcp; }
+    uint8_t getAddress() { return _i2cAddr; }
 
 private:
-    Adafruit_MCP23X17 _mcp;
     bool _initialized;
+    uint8_t _i2cAddr;
 
     // Cached port values for faster access
     uint8_t _portA_output;
+
+    /**
+     * Write a register on the MCP23017
+     */
+    bool writeRegister(uint8_t reg, uint8_t value);
+
+    /**
+     * Read a register from the MCP23017
+     */
+    uint8_t readRegister(uint8_t reg);
 
     /**
      * Write a single bit on the SPI bus (clock pulse)

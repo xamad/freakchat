@@ -35,16 +35,63 @@ bool SX1262::begin() {
     lcd.setTextColor(TFT_GREEN); lcd.println("OK");
     y += 10;
 
-    // Reset the radio
+    // Show current pin states before reset
     lcd.setTextColor(TFT_WHITE);
-    lcd.setCursor(5, y); lcd.print("2.Reset...");
-    Serial.println("Step 2: Reset radio...");
-    reset();
-    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
-    y += 10;
+    Serial.println("GPIO states before reset:");
+    Serial.printf("  BUSY=%d, DIO1=%d\n", _spi->isBusy() ? 1 : 0, _spi->readDIO1() ? 1 : 0);
 
-    // Wait for chip to be ready
-    delay(20);
+    // Aggressive reset sequence
+    lcd.setCursor(5, y); lcd.print("2.Reset...");
+    Serial.println("Step 2: Reset radio (aggressive)...");
+
+    // First, ensure NSS is high
+    _spi->deselect();
+    delay(10);
+
+    // Reset sequence: hold RST low for longer
+    Serial.println("  RST -> LOW");
+    _spi->setReset(false);  // RST low
+    delay(50);  // Hold reset for 50ms
+
+    Serial.println("  RST -> HIGH");
+    _spi->setReset(true);   // RST high
+    delay(100);  // Wait 100ms for chip to wake up
+
+    // Check BUSY after reset
+    int busyWaitCount = 0;
+    Serial.println("  Waiting for BUSY to go low...");
+    while (_spi->isBusy() && busyWaitCount < 50) {
+        delay(10);
+        busyWaitCount++;
+        if (busyWaitCount % 10 == 0) {
+            Serial.printf("  Still waiting... (%d0ms)\n", busyWaitCount);
+        }
+    }
+
+    bool busyAfterReset = _spi->isBusy();
+    Serial.printf("  BUSY after reset wait: %d (waited %dms)\n", busyAfterReset ? 1 : 0, busyWaitCount * 10);
+
+    if (busyAfterReset) {
+        lcd.setTextColor(TFT_YELLOW);
+        lcd.println("BUSY!");
+        lcd.setTextColor(TFT_WHITE);
+        lcd.setCursor(5, y + 10);
+        lcd.println("SX1262 BUSY high!");
+        lcd.setCursor(5, y + 20);
+        lcd.println("Check wiring:");
+        lcd.setCursor(5, y + 30);
+        lcd.println(" RST->PA2 BUSY->PA5");
+        Serial.println("WARNING: BUSY still high after reset!");
+        Serial.println("Possible issues:");
+        Serial.println("  1. SX1262 VCC not connected");
+        Serial.println("  2. RST pin not connected to PA2");
+        Serial.println("  3. BUSY pin not connected to PA5");
+        delay(3000);
+        // Continue anyway to try
+    } else {
+        lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    }
+    y += 10;
 
     // Check BUSY state
     bool busy = _spi->isBusy();
@@ -53,18 +100,34 @@ bool SX1262::begin() {
     Serial.printf("BUSY pin state: %d\n", busy ? 1 : 0);
     y += 10;
 
-    // Check if we can communicate
-    lcd.setCursor(5, y); lcd.print("3.Status...");
-    Serial.println("Step 3: Get status...");
-    uint8_t status = getStatus();
-    lcd.printf("0x%02X", status);
-    Serial.printf("SX1262 Status: 0x%02X\n", status);
+    // Check if we can communicate - do simple SPI test first
+    lcd.setCursor(5, y); lcd.print("3.SPI test...");
+    Serial.println("Step 3: SPI test...");
+
+    // Send GetStatus command and check response
+    _spi->select();
+    uint8_t r1 = _spi->transfer(SX1262_CMD_GET_STATUS);
+    uint8_t r2 = _spi->transfer(0x00);
+    _spi->deselect();
+
+    Serial.printf("SPI test: sent 0xC0, got 0x%02X 0x%02X\n", r1, r2);
+    lcd.printf("0x%02X,%02X", r1, r2);
     y += 10;
+
+    // Get proper status
+    uint8_t status = getStatus();
+    Serial.printf("GetStatus: 0x%02X\n", status);
 
     // Validate status
     if (status == 0x00 || status == 0xFF) {
         lcd.setTextColor(TFT_YELLOW);
-        lcd.setCursor(5, y); lcd.println("WARN:No SPI?");
+        lcd.setCursor(5, y); lcd.println("SPI: no resp");
+        Serial.println("WARNING: SX1262 not responding to SPI!");
+        Serial.println("Check wiring:");
+        Serial.println("  NSS  -> PA0");
+        Serial.println("  MISO -> PA1 (INPUT)");
+        Serial.println("  SCK  -> PA3");
+        Serial.println("  MOSI -> PA6");
         y += 10;
     }
 
@@ -73,9 +136,13 @@ bool SX1262::begin() {
     lcd.setCursor(5, y); lcd.print("4.Standby...");
     Serial.println("Step 4: Standby...");
     standby();
-    if (!_spi->waitBusy(500)) {
+    if (!_spi->waitBusy(1000)) {
         lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
         Serial.println("FAILED: Standby timeout");
+        Serial.println("BUSY pin stuck high - check:");
+        Serial.println("  1. SX1262 power (VCC=3.3V, GND)");
+        Serial.println("  2. RST connected to PA2");
+        Serial.println("  3. BUSY connected to PA5");
         return false;
     }
     lcd.setTextColor(TFT_GREEN); lcd.println("OK");
@@ -152,11 +219,20 @@ bool SX1262::begin() {
 }
 
 void SX1262::reset() {
-    _spi->setReset(LOW);
-    delay(10);
-    _spi->setReset(HIGH);
-    delay(20);
-    _spi->waitBusy();
+    // Ensure NSS is high first
+    _spi->deselect();
+    delay(5);
+
+    // Pull RST low
+    _spi->setReset(false);
+    delay(50);  // Hold low for 50ms
+
+    // Release RST (high)
+    _spi->setReset(true);
+    delay(100);  // Wait for chip to wake up
+
+    // Wait for BUSY to go low
+    _spi->waitBusy(500);
 }
 
 bool SX1262::configure(float freq, float bw, uint8_t sf, uint8_t cr) {
