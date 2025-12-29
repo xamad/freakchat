@@ -335,17 +335,60 @@ void setup() {
 
     delay(1500);
 
+    // Debug on display
+    M5Cardputer.Display.fillScreen(TFT_BLACK);
+    M5Cardputer.Display.setTextColor(TFT_WHITE);
+    M5Cardputer.Display.setTextSize(1);
+    int debugY = 10;
+
+    M5Cardputer.Display.setCursor(5, debugY);
+    M5Cardputer.Display.println("1. After splash...");
+    debugY += 12;
+    Serial.println("DEBUG: After splash delay");
+
     // Initialize chat UI first (creates sprite)
+    M5Cardputer.Display.setCursor(5, debugY);
+    M5Cardputer.Display.println("2. chatUI.begin()...");
+    debugY += 12;
+    Serial.println("DEBUG: Calling chatUI.begin()...");
+
     chatUI.begin();
 
+    M5Cardputer.Display.setCursor(5, debugY);
+    M5Cardputer.Display.println("3. chatUI OK!");
+    debugY += 12;
+    Serial.println("DEBUG: chatUI.begin() OK");
+
     // Load settings
+    M5Cardputer.Display.setCursor(5, debugY);
+    M5Cardputer.Display.println("4. loadSettings()...");
+    debugY += 12;
+    Serial.println("DEBUG: Calling loadSettings()...");
+
     loadSettings();
+
+    M5Cardputer.Display.setCursor(5, debugY);
+    M5Cardputer.Display.println("5. Settings OK!");
+    debugY += 12;
+    Serial.println("DEBUG: loadSettings() OK");
+
+    M5Cardputer.Display.setCursor(5, debugY);
+    M5Cardputer.Display.println("6. Starting loop...");
+    Serial.println("DEBUG: Entering STATE_NICKNAME_SETUP");
+
+    delay(1000);  // Show debug for 1 second
 
     // Go to nickname setup
     currentState = STATE_NICKNAME_SETUP;
 }
 
 void loop() {
+    static bool firstLoop = true;
+    if (firstLoop) {
+        Serial.println("DEBUG: First loop() iteration");
+        firstLoop = false;
+    }
+
     switch (currentState) {
         case STATE_INIT:
             // Should not reach here

@@ -129,7 +129,7 @@ public:
     void showRSSI(int16_t rssi);
 
 private:
-    M5Canvas _canvas;
+    bool _initialized;
     char _nickname[MAX_NICKNAME_LEN + 1];
     char _inputBuffer[MAX_MSG_LENGTH + 1];
     size_t _inputPos;
