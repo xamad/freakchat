@@ -32,9 +32,9 @@
 #define MCP_LORA_MISO   1       // GPA1 - SPI Data from LoRa (INPUT)
 #define MCP_LORA_SCK    2       // GPA2 - SPI Clock (OUTPUT)
 #define MCP_LORA_RST    3       // GPA3 - Reset (OUTPUT)
-#define MCP_LORA_MOSI   4       // GPA4 - SPI Data to LoRa (OUTPUT)
+#define MCP_LORA_DIO1   4       // GPA4 - Interrupt (INPUT)
 #define MCP_LORA_BUSY   5       // GPA5 - Busy indicator (INPUT)
-#define MCP_LORA_DIO1   6       // GPA6 - Interrupt (INPUT) - optional
+#define MCP_LORA_MOSI   6       // GPA6 - SPI Data to LoRa (OUTPUT)
 
 // ==================== LoRa Configuration ====================
 #ifndef LORA_FREQUENCY
