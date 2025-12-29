@@ -18,203 +18,142 @@ SX1262::SX1262()
 }
 
 bool SX1262::begin() {
-    Serial.println("SX1262::begin() starting...");
+    Serial.println("\n=== SX1262::begin() ===");
 
-    // Use display for debug
     auto& lcd = M5Cardputer.Display;
-    int y = 22;
 
-    // Initialize the SPI bus through MCP23017
-    lcd.setCursor(5, y); lcd.print("1.MCP23017...");
-    Serial.println("Step 1: Init MCP23017 SPI...");
+    // Step 1: Initialize MCP23017
+    Serial.println("Step 1: Init MCP23017...");
     if (!_spi->begin()) {
-        lcd.setTextColor(TFT_RED); lcd.println("FAIL");
-        Serial.println("FAILED: MCP23017 SPI init");
+        Serial.println("FAILED: MCP23017 init");
         return false;
     }
-    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
-    y += 10;
+    Serial.println("MCP23017 OK");
 
-    // Show current pin states before reset
+    // Clear screen for SX1262 init status
+    lcd.fillScreen(TFT_BLACK);
+    lcd.setTextSize(1);
+    lcd.setTextColor(TFT_CYAN);
+    lcd.setCursor(5, 5);
+    lcd.println("SX1262 Init");
     lcd.setTextColor(TFT_WHITE);
-    Serial.println("GPIO states before reset:");
-    Serial.printf("  BUSY=%d, DIO1=%d\n", _spi->isBusy() ? 1 : 0, _spi->readDIO1() ? 1 : 0);
 
-    // Aggressive reset sequence
-    lcd.setCursor(5, y); lcd.print("2.Reset...");
-    Serial.println("Step 2: Reset radio (aggressive)...");
+    int line = 0;
+    auto showStatus = [&](const char* step, bool ok, const char* extra = nullptr) {
+        int y = 20 + line * 12;
+        lcd.setCursor(5, y);
+        lcd.setTextColor(TFT_WHITE);
+        lcd.print(step);
+        lcd.setTextColor(ok ? TFT_GREEN : TFT_RED);
+        lcd.println(ok ? " OK" : " FAIL");
+        if (extra) {
+            lcd.setTextColor(TFT_YELLOW);
+            lcd.setCursor(10, y + 12);
+            lcd.println(extra);
+            line++;
+        }
+        line++;
+    };
 
-    // First, ensure NSS is high
+    // Step 2: Reset SX1262
+    Serial.println("Step 2: Reset SX1262...");
     _spi->deselect();
     delay(10);
+    _spi->setReset(false);
+    delay(50);
+    _spi->setReset(true);
+    delay(100);
 
-    // Reset sequence: hold RST low for longer
-    Serial.println("  RST -> LOW");
-    _spi->setReset(false);  // RST low
-    delay(50);  // Hold reset for 50ms
-
-    Serial.println("  RST -> HIGH");
-    _spi->setReset(true);   // RST high
-    delay(100);  // Wait 100ms for chip to wake up
-
-    // Check BUSY after reset
-    int busyWaitCount = 0;
-    Serial.println("  Waiting for BUSY to go low...");
-    while (_spi->isBusy() && busyWaitCount < 50) {
+    // Wait for BUSY
+    int waitMs = 0;
+    while (_spi->isBusy() && waitMs < 500) {
         delay(10);
-        busyWaitCount++;
-        if (busyWaitCount % 10 == 0) {
-            Serial.printf("  Still waiting... (%d0ms)\n", busyWaitCount);
-        }
+        waitMs += 10;
     }
+    bool busyOK = !_spi->isBusy();
+    Serial.printf("Reset: BUSY=%d after %dms\n", busyOK ? 0 : 1, waitMs);
+    showStatus("Reset", busyOK, busyOK ? nullptr : "BUSY stuck!");
 
-    bool busyAfterReset = _spi->isBusy();
-    Serial.printf("  BUSY after reset wait: %d (waited %dms)\n", busyAfterReset ? 1 : 0, busyWaitCount * 10);
-
-    if (busyAfterReset) {
+    if (!busyOK) {
         lcd.setTextColor(TFT_YELLOW);
-        lcd.println("BUSY!");
-        lcd.setTextColor(TFT_WHITE);
-        lcd.setCursor(5, y + 10);
-        lcd.println("SX1262 BUSY high!");
-        lcd.setCursor(5, y + 20);
-        lcd.println("Check wiring:");
-        lcd.setCursor(5, y + 30);
-        lcd.println(" RST->PA2 BUSY->PA5");
-        Serial.println("WARNING: BUSY still high after reset!");
-        Serial.println("Possible issues:");
-        Serial.println("  1. SX1262 VCC not connected");
-        Serial.println("  2. RST pin not connected to PA2");
-        Serial.println("  3. BUSY pin not connected to PA5");
-        delay(3000);
-        // Continue anyway to try
-    } else {
-        lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+        lcd.println("Check: RST->PA2, BUSY->PA5");
+        lcd.println("Check: VCC=3.3V, GND");
+        delay(5000);
+        return false;
     }
-    y += 10;
 
-    // Check BUSY state
-    bool busy = _spi->isBusy();
-    lcd.setTextColor(TFT_WHITE);
-    lcd.setCursor(5, y); lcd.printf("BUSY=%d ", busy ? 1 : 0);
-    Serial.printf("BUSY pin state: %d\n", busy ? 1 : 0);
-    y += 10;
-
-    // Check if we can communicate - do simple SPI test first
-    lcd.setCursor(5, y); lcd.print("3.SPI test...");
+    // Step 3: SPI test
     Serial.println("Step 3: SPI test...");
-
-    // Send GetStatus command and check response
     _spi->select();
     uint8_t r1 = _spi->transfer(SX1262_CMD_GET_STATUS);
     uint8_t r2 = _spi->transfer(0x00);
     _spi->deselect();
+    Serial.printf("SPI: 0x%02X 0x%02X\n", r1, r2);
 
-    Serial.printf("SPI test: sent 0xC0, got 0x%02X 0x%02X\n", r1, r2);
-    lcd.printf("0x%02X,%02X", r1, r2);
-    y += 10;
+    bool spiOK = (r1 != 0xFF && r2 != 0xFF);
+    char spiBuf[20];
+    snprintf(spiBuf, sizeof(spiBuf), "0x%02X 0x%02X", r1, r2);
+    showStatus("SPI", spiOK, spiBuf);
 
-    // Get proper status
-    uint8_t status = getStatus();
-    Serial.printf("GetStatus: 0x%02X\n", status);
-
-    // Validate status
-    if (status == 0x00 || status == 0xFF) {
+    if (!spiOK) {
         lcd.setTextColor(TFT_YELLOW);
-        lcd.setCursor(5, y); lcd.println("SPI: no resp");
-        Serial.println("WARNING: SX1262 not responding to SPI!");
-        Serial.println("Check wiring:");
-        Serial.println("  NSS  -> PA0");
-        Serial.println("  MISO -> PA1 (INPUT)");
-        Serial.println("  SCK  -> PA3");
-        Serial.println("  MOSI -> PA6");
-        y += 10;
+        lcd.println("Check SPI wiring:");
+        lcd.println(" NSS->PA0 SCK->PA3");
+        lcd.println(" MOSI->PA6 MISO->PA1");
+        delay(5000);
+        return false;
     }
 
-    // Configure for LoRa mode
-    lcd.setTextColor(TFT_WHITE);
-    lcd.setCursor(5, y); lcd.print("4.Standby...");
+    // Step 4: Standby
     Serial.println("Step 4: Standby...");
     standby();
-    if (!_spi->waitBusy(1000)) {
-        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
-        Serial.println("FAILED: Standby timeout");
-        Serial.println("BUSY pin stuck high - check:");
-        Serial.println("  1. SX1262 power (VCC=3.3V, GND)");
-        Serial.println("  2. RST connected to PA2");
-        Serial.println("  3. BUSY connected to PA5");
-        return false;
-    }
-    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
-    y += 10;
+    bool stbyOK = _spi->waitBusy(1000);
+    Serial.printf("Standby: %s\n", stbyOK ? "OK" : "TIMEOUT");
+    showStatus("Standby", stbyOK);
+    if (!stbyOK) return false;
 
-    // Set regulator mode
-    lcd.setTextColor(TFT_WHITE);
-    lcd.setCursor(5, y); lcd.print("5.Regulator...");
-    Serial.println("Step 5: Set regulator...");
+    // Step 5: Set regulator (DC-DC)
+    Serial.println("Step 5: Regulator...");
     setRegulatorMode(SX1262_REGULATOR_DC_DC);
-    if (!_spi->waitBusy(500)) {
-        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
-        Serial.println("FAILED: Regulator timeout");
-        return false;
-    }
-    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
-    y += 10;
+    bool regOK = _spi->waitBusy(500);
+    showStatus("Regulator", regOK);
+    if (!regOK) return false;
 
-    // Set packet type to LoRa
-    lcd.setTextColor(TFT_WHITE);
-    lcd.setCursor(5, y); lcd.print("6.LoRa mode...");
-    Serial.println("Step 6: Set packet type...");
+    // Step 6: Set LoRa packet type
+    Serial.println("Step 6: LoRa mode...");
     setPacketType(SX1262_PACKET_TYPE_LORA);
-    if (!_spi->waitBusy(500)) {
-        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
-        Serial.println("FAILED: Packet type timeout");
-        return false;
-    }
-    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
-    y += 10;
+    bool loraOK = _spi->waitBusy(500);
+    showStatus("LoRa mode", loraOK);
+    if (!loraOK) return false;
 
-    // Set DIO2 as RF switch control
-    lcd.setTextColor(TFT_WHITE);
-    lcd.setCursor(5, y); lcd.print("7.DIO2...");
-    Serial.println("Step 7: DIO2 RF switch...");
+    // Step 7: DIO2 as RF switch
+    Serial.println("Step 7: DIO2...");
     setDio2AsRfSwitch(true);
-    if (!_spi->waitBusy(500)) {
-        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
-        Serial.println("FAILED: DIO2 timeout");
-        return false;
-    }
-    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
-    y += 10;
+    bool dio2OK = _spi->waitBusy(500);
+    showStatus("DIO2 RF", dio2OK);
+    if (!dio2OK) return false;
 
-    // Calibrate image
-    lcd.setTextColor(TFT_WHITE);
-    lcd.setCursor(5, y); lcd.print("8.Calibrate...");
-    Serial.println("Step 8: Calibrate image...");
+    // Step 8: Calibrate
+    Serial.println("Step 8: Calibrate...");
     calibrateImage(_frequency);
-    if (!_spi->waitBusy(500)) {
-        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
-        Serial.println("FAILED: Calibrate timeout");
-        return false;
-    }
-    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
-    y += 10;
+    bool calOK = _spi->waitBusy(500);
+    showStatus("Calibrate", calOK);
+    if (!calOK) return false;
 
-    // Set buffer base addresses
-    lcd.setTextColor(TFT_WHITE);
-    lcd.setCursor(5, y); lcd.print("9.Buffer...");
-    Serial.println("Step 9: Set buffer base...");
+    // Step 9: Buffer addresses
+    Serial.println("Step 9: Buffer...");
     setBufferBaseAddress(0x00, 0x00);
-    if (!_spi->waitBusy(500)) {
-        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
-        Serial.println("FAILED: Buffer base timeout");
-        return false;
-    }
-    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    bool bufOK = _spi->waitBusy(500);
+    showStatus("Buffer", bufOK);
+    if (!bufOK) return false;
 
-    delay(1000);  // Show result
+    // Success!
+    lcd.setTextColor(TFT_GREEN);
+    lcd.setCursor(5, 20 + line * 12);
+    lcd.println("=== RADIO OK ===");
 
-    Serial.println("SX1262 initialized successfully!");
+    Serial.println("SX1262 initialized OK!");
+    delay(1500);
     return true;
 }
 
