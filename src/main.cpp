@@ -88,11 +88,23 @@ bool parsePacket(const uint8_t* packet, size_t length, char* nickname, char* mes
  */
 bool initRadio() {
     Serial.println("Initializing radio...");
-    chatUI.addSystemMessage("Init radio...");
+
+    // Show debug on display
+    M5Cardputer.Display.fillScreen(TFT_BLACK);
+    M5Cardputer.Display.setTextColor(TFT_WHITE);
+    M5Cardputer.Display.setTextSize(1);
+    M5Cardputer.Display.setCursor(5, 10);
+    M5Cardputer.Display.println("Initializing radio...");
 
     if (!radio.begin()) {
         Serial.println("Radio init failed!");
-        chatUI.addSystemMessage("Radio FAILED!");
+        M5Cardputer.Display.setTextColor(TFT_RED);
+        M5Cardputer.Display.println("Radio FAILED!");
+        M5Cardputer.Display.println("");
+        M5Cardputer.Display.setTextColor(TFT_YELLOW);
+        M5Cardputer.Display.println("Check serial 115200");
+        M5Cardputer.Display.println("for details");
+        delay(5000);
         return false;
     }
 

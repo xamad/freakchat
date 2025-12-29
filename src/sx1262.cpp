@@ -3,6 +3,7 @@
  */
 
 #include "sx1262.h"
+#include <M5Cardputer.h>
 
 // Global instance
 SX1262 radio;
@@ -19,88 +20,132 @@ SX1262::SX1262()
 bool SX1262::begin() {
     Serial.println("SX1262::begin() starting...");
 
+    // Use display for debug
+    auto& lcd = M5Cardputer.Display;
+    int y = 22;
+
     // Initialize the SPI bus through MCP23017
+    lcd.setCursor(5, y); lcd.print("1.MCP23017...");
     Serial.println("Step 1: Init MCP23017 SPI...");
     if (!_spi->begin()) {
+        lcd.setTextColor(TFT_RED); lcd.println("FAIL");
         Serial.println("FAILED: MCP23017 SPI init");
         return false;
     }
-    Serial.println("Step 1: OK");
+    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    y += 10;
 
     // Reset the radio
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setCursor(5, y); lcd.print("2.Reset...");
     Serial.println("Step 2: Reset radio...");
     reset();
-    Serial.println("Step 2: OK");
+    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    y += 10;
 
     // Wait for chip to be ready
     delay(20);
 
     // Check BUSY state
-    Serial.printf("BUSY pin state: %d\n", _spi->isBusy() ? 1 : 0);
+    bool busy = _spi->isBusy();
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setCursor(5, y); lcd.printf("BUSY=%d ", busy ? 1 : 0);
+    Serial.printf("BUSY pin state: %d\n", busy ? 1 : 0);
+    y += 10;
 
     // Check if we can communicate
+    lcd.setCursor(5, y); lcd.print("3.Status...");
     Serial.println("Step 3: Get status...");
     uint8_t status = getStatus();
+    lcd.printf("0x%02X", status);
     Serial.printf("SX1262 Status: 0x%02X\n", status);
+    y += 10;
 
-    // Validate status - should not be 0x00 or 0xFF
+    // Validate status
     if (status == 0x00 || status == 0xFF) {
-        Serial.println("WARNING: Status may indicate no communication!");
+        lcd.setTextColor(TFT_YELLOW);
+        lcd.setCursor(5, y); lcd.println("WARN:No SPI?");
+        y += 10;
     }
 
     // Configure for LoRa mode
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setCursor(5, y); lcd.print("4.Standby...");
     Serial.println("Step 4: Standby...");
     standby();
     if (!_spi->waitBusy(500)) {
+        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
         Serial.println("FAILED: Standby timeout");
         return false;
     }
-    Serial.println("Step 4: OK");
+    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    y += 10;
 
-    // Set regulator mode (DC-DC for better efficiency)
+    // Set regulator mode
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setCursor(5, y); lcd.print("5.Regulator...");
     Serial.println("Step 5: Set regulator...");
     setRegulatorMode(SX1262_REGULATOR_DC_DC);
     if (!_spi->waitBusy(500)) {
+        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
         Serial.println("FAILED: Regulator timeout");
         return false;
     }
-    Serial.println("Step 5: OK");
+    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    y += 10;
 
     // Set packet type to LoRa
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setCursor(5, y); lcd.print("6.LoRa mode...");
     Serial.println("Step 6: Set packet type...");
     setPacketType(SX1262_PACKET_TYPE_LORA);
     if (!_spi->waitBusy(500)) {
+        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
         Serial.println("FAILED: Packet type timeout");
         return false;
     }
-    Serial.println("Step 6: OK");
+    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    y += 10;
 
     // Set DIO2 as RF switch control
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setCursor(5, y); lcd.print("7.DIO2...");
     Serial.println("Step 7: DIO2 RF switch...");
     setDio2AsRfSwitch(true);
     if (!_spi->waitBusy(500)) {
+        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
         Serial.println("FAILED: DIO2 timeout");
         return false;
     }
-    Serial.println("Step 7: OK");
+    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    y += 10;
 
-    // Calibrate image for frequency
+    // Calibrate image
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setCursor(5, y); lcd.print("8.Calibrate...");
     Serial.println("Step 8: Calibrate image...");
     calibrateImage(_frequency);
     if (!_spi->waitBusy(500)) {
+        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
         Serial.println("FAILED: Calibrate timeout");
         return false;
     }
-    Serial.println("Step 8: OK");
+    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+    y += 10;
 
     // Set buffer base addresses
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setCursor(5, y); lcd.print("9.Buffer...");
     Serial.println("Step 9: Set buffer base...");
     setBufferBaseAddress(0x00, 0x00);
     if (!_spi->waitBusy(500)) {
+        lcd.setTextColor(TFT_RED); lcd.println("TIMEOUT");
         Serial.println("FAILED: Buffer base timeout");
         return false;
     }
-    Serial.println("Step 9: OK");
+    lcd.setTextColor(TFT_GREEN); lcd.println("OK");
+
+    delay(1000);  // Show result
 
     Serial.println("SX1262 initialized successfully!");
     return true;
