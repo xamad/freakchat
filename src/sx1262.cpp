@@ -17,47 +17,92 @@ SX1262::SX1262()
 }
 
 bool SX1262::begin() {
+    Serial.println("SX1262::begin() starting...");
+
     // Initialize the SPI bus through MCP23017
+    Serial.println("Step 1: Init MCP23017 SPI...");
     if (!_spi->begin()) {
-        Serial.println("Failed to initialize MCP23017 SPI");
+        Serial.println("FAILED: MCP23017 SPI init");
         return false;
     }
+    Serial.println("Step 1: OK");
 
     // Reset the radio
+    Serial.println("Step 2: Reset radio...");
     reset();
+    Serial.println("Step 2: OK");
 
     // Wait for chip to be ready
     delay(20);
 
+    // Check BUSY state
+    Serial.printf("BUSY pin state: %d\n", _spi->isBusy() ? 1 : 0);
+
     // Check if we can communicate
+    Serial.println("Step 3: Get status...");
     uint8_t status = getStatus();
     Serial.printf("SX1262 Status: 0x%02X\n", status);
 
+    // Validate status - should not be 0x00 or 0xFF
+    if (status == 0x00 || status == 0xFF) {
+        Serial.println("WARNING: Status may indicate no communication!");
+    }
+
     // Configure for LoRa mode
+    Serial.println("Step 4: Standby...");
     standby();
-    _spi->waitBusy();
+    if (!_spi->waitBusy(500)) {
+        Serial.println("FAILED: Standby timeout");
+        return false;
+    }
+    Serial.println("Step 4: OK");
 
     // Set regulator mode (DC-DC for better efficiency)
+    Serial.println("Step 5: Set regulator...");
     setRegulatorMode(SX1262_REGULATOR_DC_DC);
-    _spi->waitBusy();
+    if (!_spi->waitBusy(500)) {
+        Serial.println("FAILED: Regulator timeout");
+        return false;
+    }
+    Serial.println("Step 5: OK");
 
     // Set packet type to LoRa
+    Serial.println("Step 6: Set packet type...");
     setPacketType(SX1262_PACKET_TYPE_LORA);
-    _spi->waitBusy();
+    if (!_spi->waitBusy(500)) {
+        Serial.println("FAILED: Packet type timeout");
+        return false;
+    }
+    Serial.println("Step 6: OK");
 
     // Set DIO2 as RF switch control
+    Serial.println("Step 7: DIO2 RF switch...");
     setDio2AsRfSwitch(true);
-    _spi->waitBusy();
+    if (!_spi->waitBusy(500)) {
+        Serial.println("FAILED: DIO2 timeout");
+        return false;
+    }
+    Serial.println("Step 7: OK");
 
     // Calibrate image for frequency
+    Serial.println("Step 8: Calibrate image...");
     calibrateImage(_frequency);
-    _spi->waitBusy();
+    if (!_spi->waitBusy(500)) {
+        Serial.println("FAILED: Calibrate timeout");
+        return false;
+    }
+    Serial.println("Step 8: OK");
 
     // Set buffer base addresses
+    Serial.println("Step 9: Set buffer base...");
     setBufferBaseAddress(0x00, 0x00);
-    _spi->waitBusy();
+    if (!_spi->waitBusy(500)) {
+        Serial.println("FAILED: Buffer base timeout");
+        return false;
+    }
+    Serial.println("Step 9: OK");
 
-    Serial.println("SX1262 initialized");
+    Serial.println("SX1262 initialized successfully!");
     return true;
 }
 

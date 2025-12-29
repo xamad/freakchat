@@ -14,19 +14,29 @@ MCP23017_SPI::MCP23017_SPI()
 }
 
 bool MCP23017_SPI::begin() {
+    Serial.println("MCP23017_SPI::begin() starting...");
+    Serial.printf("I2C pins: SDA=%d, SCL=%d\n", I2C_SDA, I2C_SCL);
+
     // Initialize I2C
     Wire.begin(I2C_SDA, I2C_SCL);
-    Wire.setClock(400000);  // 400kHz for faster communication
+    Wire.setClock(100000);  // Start slower for reliability
+    Serial.println("I2C initialized");
 
     // Initialize MCP23017
+    Serial.printf("Looking for MCP23017 at 0x%02X...\n", MCP23017_ADDR);
     if (!_mcp.begin_I2C(MCP23017_ADDR, &Wire)) {
-        Serial.println("MCP23017 not found!");
+        Serial.println("MCP23017 NOT FOUND!");
         return false;
     }
 
-    Serial.println("MCP23017 found at 0x" + String(MCP23017_ADDR, HEX));
+    Serial.println("MCP23017 FOUND!");
 
     // Configure pins
+    Serial.println("Configuring GPIO pins...");
+    Serial.printf("NSS=%d, MISO=%d, SCK=%d, RST=%d, DIO1=%d, BUSY=%d, MOSI=%d\n",
+                  MCP_LORA_NSS, MCP_LORA_MISO, MCP_LORA_SCK, MCP_LORA_RST,
+                  MCP_LORA_DIO1, MCP_LORA_BUSY, MCP_LORA_MOSI);
+
     // Output pins: NSS, SCK, MOSI, RST
     _mcp.pinMode(MCP_LORA_NSS, OUTPUT);
     _mcp.pinMode(MCP_LORA_SCK, OUTPUT);
@@ -38,15 +48,22 @@ bool MCP23017_SPI::begin() {
     _mcp.pinMode(MCP_LORA_BUSY, INPUT);
     _mcp.pinMode(MCP_LORA_DIO1, INPUT);
 
+    Serial.println("GPIO configured");
+
     // Set initial states
     _portA_output = 0;
     _portA_output |= (1 << MCP_LORA_NSS);   // CS high (deselected)
     _portA_output |= (1 << MCP_LORA_RST);   // RST high (not reset)
-    // SCK and MOSI start low
     updateOutputs();
 
+    Serial.println("Initial states set");
+
+    // Read back to verify
+    uint8_t inputs = _mcp.readGPIOA();
+    Serial.printf("GPIOA read: 0x%02X (BUSY=%d)\n", inputs, (inputs >> MCP_LORA_BUSY) & 1);
+
     _initialized = true;
-    Serial.println("MCP23017 SPI initialized");
+    Serial.println("MCP23017 SPI ready!");
     return true;
 }
 
