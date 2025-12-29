@@ -3,6 +3,7 @@
  */
 
 #include "mcp23017_spi.h"
+#include <M5Cardputer.h>
 
 // Global instance
 MCP23017_SPI mcpSPI;
@@ -17,18 +18,48 @@ bool MCP23017_SPI::begin() {
     Serial.println("MCP23017_SPI::begin() starting...");
     Serial.printf("I2C pins: SDA=%d, SCL=%d\n", I2C_SDA, I2C_SCL);
 
+    auto& lcd = M5Cardputer.Display;
+
     // Initialize I2C
     Wire.begin(I2C_SDA, I2C_SCL);
-    Wire.setClock(100000);  // Start slower for reliability
+    Wire.setClock(100000);
     Serial.println("I2C initialized");
+
+    // Scan I2C bus
+    Serial.println("Scanning I2C bus...");
+    lcd.println("I2C Scan:");
+    int found = 0;
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) {
+            Serial.printf("  Found: 0x%02X\n", addr);
+            lcd.printf(" 0x%02X", addr);
+            found++;
+        }
+    }
+    if (found == 0) {
+        Serial.println("  No I2C devices found!");
+        lcd.setTextColor(TFT_RED);
+        lcd.println(" NONE!");
+        lcd.println("Check I2C wiring!");
+        delay(3000);
+        return false;
+    }
+    lcd.println("");
 
     // Initialize MCP23017
     Serial.printf("Looking for MCP23017 at 0x%02X...\n", MCP23017_ADDR);
+    lcd.printf("MCP@0x%02X...", MCP23017_ADDR);
     if (!_mcp.begin_I2C(MCP23017_ADDR, &Wire)) {
         Serial.println("MCP23017 NOT FOUND!");
+        lcd.setTextColor(TFT_RED);
+        lcd.println("FAIL");
+        delay(3000);
         return false;
     }
 
+    lcd.setTextColor(TFT_GREEN);
+    lcd.println("OK");
     Serial.println("MCP23017 FOUND!");
 
     // Configure pins
