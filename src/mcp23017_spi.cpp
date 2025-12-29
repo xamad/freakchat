@@ -25,33 +25,37 @@ bool MCP23017_SPI::begin() {
     Wire.setClock(100000);
     Serial.println("I2C initialized");
 
-    // Scan I2C bus
-    Serial.println("Scanning I2C bus...");
-    lcd.println("I2C Scan:");
-    int found = 0;
-    for (uint8_t addr = 1; addr < 127; addr++) {
+    // Scan I2C bus for MCP23017 (addresses 0x20-0x27)
+    Serial.println("Scanning for MCP23017...");
+    lcd.print("Scan MCP23017...");
+
+    uint8_t mcpAddr = 0;
+    for (uint8_t addr = 0x20; addr <= 0x27; addr++) {
         Wire.beginTransmission(addr);
         if (Wire.endTransmission() == 0) {
-            Serial.printf("  Found: 0x%02X\n", addr);
-            lcd.printf(" 0x%02X", addr);
-            found++;
+            Serial.printf("  Found at 0x%02X\n", addr);
+            mcpAddr = addr;
+            break;
         }
     }
-    if (found == 0) {
-        Serial.println("  No I2C devices found!");
+
+    if (mcpAddr == 0) {
+        Serial.println("MCP23017 NOT FOUND on 0x20-0x27!");
         lcd.setTextColor(TFT_RED);
-        lcd.println(" NONE!");
-        lcd.println("Check I2C wiring!");
+        lcd.println("NONE!");
+        lcd.println("Check wiring!");
         delay(3000);
         return false;
     }
-    lcd.println("");
 
-    // Initialize MCP23017
-    Serial.printf("Looking for MCP23017 at 0x%02X...\n", MCP23017_ADDR);
-    lcd.printf("MCP@0x%02X...", MCP23017_ADDR);
-    if (!_mcp.begin_I2C(MCP23017_ADDR, &Wire)) {
-        Serial.println("MCP23017 NOT FOUND!");
+    lcd.setTextColor(TFT_GREEN);
+    lcd.printf("0x%02X\n", mcpAddr);
+
+    // Initialize MCP23017 at found address
+    lcd.setTextColor(TFT_WHITE);
+    lcd.print("Init MCP...");
+    if (!_mcp.begin_I2C(mcpAddr, &Wire)) {
+        Serial.println("MCP23017 init failed!");
         lcd.setTextColor(TFT_RED);
         lcd.println("FAIL");
         delay(3000);
@@ -60,7 +64,7 @@ bool MCP23017_SPI::begin() {
 
     lcd.setTextColor(TFT_GREEN);
     lcd.println("OK");
-    Serial.println("MCP23017 FOUND!");
+    Serial.printf("MCP23017 ready at 0x%02X\n", mcpAddr);
 
     // Configure pins
     Serial.println("Configuring GPIO pins...");
