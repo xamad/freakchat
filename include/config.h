@@ -20,9 +20,9 @@
 // #define I2C_SDA      43
 // #define I2C_SCL      46
 
-// MCP23017 I2C address (A0, A1, A2 all grounded = 0x20)
+// MCP23017 I2C address (A0=1, A1=1, A2=1 = 0x27)
 #ifndef MCP23017_ADDR
-#define MCP23017_ADDR   0x20
+#define MCP23017_ADDR   0x27
 #endif
 
 // ==================== MCP23017 Pin Mapping for SX1262 ====================
