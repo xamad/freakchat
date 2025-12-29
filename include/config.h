@@ -27,11 +27,12 @@
 
 // ==================== MCP23017 Pin Mapping for SX1262 ====================
 // DX-LR-30 connections to MCP23017 Port A (GPA0-GPA7)
+// Your wiring:
 #define MCP_LORA_NSS    0       // GPA0 - Chip Select (OUTPUT)
-#define MCP_LORA_SCK    1       // GPA1 - SPI Clock (OUTPUT)
-#define MCP_LORA_MISO   2       // GPA2 - SPI Data from LoRa (INPUT)
-#define MCP_LORA_MOSI   3       // GPA3 - SPI Data to LoRa (OUTPUT)
-#define MCP_LORA_RST    4       // GPA4 - Reset (OUTPUT)
+#define MCP_LORA_MISO   1       // GPA1 - SPI Data from LoRa (INPUT)
+#define MCP_LORA_SCK    2       // GPA2 - SPI Clock (OUTPUT)
+#define MCP_LORA_RST    3       // GPA3 - Reset (OUTPUT)
+#define MCP_LORA_MOSI   4       // GPA4 - SPI Data to LoRa (OUTPUT)
 #define MCP_LORA_BUSY   5       // GPA5 - Busy indicator (INPUT)
 #define MCP_LORA_DIO1   6       // GPA6 - Interrupt (INPUT) - optional
 
