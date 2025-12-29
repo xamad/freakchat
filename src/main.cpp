@@ -230,7 +230,7 @@ void handleNicknameSetup() {
             saveSettings();
             currentState = STATE_CHAT;
             firstDraw = true;
-            chatUI.begin();
+            chatUI.redraw();
             chatUI.addSystemMessage("Welcome to LoRa Chat!");
 
             // Initialize radio
@@ -334,6 +334,9 @@ void setup() {
     M5Cardputer.Display.printf("%.1f MHz", LORA_FREQUENCY);
 
     delay(1500);
+
+    // Initialize chat UI first (creates sprite)
+    chatUI.begin();
 
     // Load settings
     loadSettings();
