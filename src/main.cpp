@@ -357,11 +357,11 @@ void gpioTestMode() {
         lcd.setTextColor(TFT_WHITE);
 
         lcd.setCursor(10, 55);
-        lcd.printf("R: RST (PA2) = %d", rstState ? 1 : 0);
+        lcd.printf("R: RST (PA3) = %d", rstState ? 1 : 0);
         lcd.setCursor(10, 67);
         lcd.printf("N: NSS (PA0) = %d", nssState ? 1 : 0);
         lcd.setCursor(10, 79);
-        lcd.printf("S: SCK (PA3) = %d", sckState ? 1 : 0);
+        lcd.printf("S: SCK (PA2) = %d", sckState ? 1 : 0);
         lcd.setCursor(10, 91);
         lcd.printf("M: MOSI(PA6) = %d", mosiState ? 1 : 0);
 

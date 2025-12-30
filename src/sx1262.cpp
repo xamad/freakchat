@@ -76,7 +76,7 @@ bool SX1262::begin() {
 
     if (!busyOK) {
         lcd.setTextColor(TFT_YELLOW);
-        lcd.println("Check: RST->PA2, BUSY->PA5");
+        lcd.println("Check: RST->PA3, BUSY->PA5");
         lcd.println("Check: VCC=3.3V, GND");
         delay(5000);
         return false;
@@ -98,7 +98,7 @@ bool SX1262::begin() {
     if (!spiOK) {
         lcd.setTextColor(TFT_YELLOW);
         lcd.println("Check SPI wiring:");
-        lcd.println(" NSS->PA0 SCK->PA3");
+        lcd.println(" NSS->PA0 SCK->PA2");
         lcd.println(" MOSI->PA6 MISO->PA1");
         delay(5000);
         return false;
