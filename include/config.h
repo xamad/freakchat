@@ -60,8 +60,8 @@
 #define MSG_LINES           8
 
 // ==================== Timing Configuration ====================
-#define SPI_DELAY_US        1       // Bit-bang SPI delay (microseconds)
-#define BUSY_TIMEOUT_MS     1000    // Max wait for BUSY pin
-#define TX_TIMEOUT_MS       3000    // Transmission timeout
+#define SPI_DELAY_US        5       // Bit-bang SPI delay (microseconds) - increased for reliability
+#define BUSY_TIMEOUT_MS     2000    // Max wait for BUSY pin
+#define TX_TIMEOUT_MS       5000    // Transmission timeout - increased for slow SPI
 
 #endif // CONFIG_H
