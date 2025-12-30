@@ -313,6 +313,143 @@ void handleChat() {
     }
 }
 
+/**
+ * GPIO Test Mode - helps debug wiring issues
+ * Shows state of all MCP23017 pins and allows manual control
+ */
+void gpioTestMode() {
+    auto& lcd = M5Cardputer.Display;
+
+    Serial.println("\n=== GPIO TEST MODE ===");
+
+    // Initialize MCP23017 only
+    if (!mcpSPI.begin()) {
+        lcd.fillScreen(TFT_RED);
+        lcd.setTextColor(TFT_WHITE);
+        lcd.setCursor(10, 60);
+        lcd.println("MCP23017 FAIL!");
+        while(1) delay(1000);
+    }
+
+    bool rstState = true;   // RST high (not reset)
+    bool nssState = true;   // NSS high (deselected)
+    bool sckState = false;  // SCK low
+    bool mosiState = false; // MOSI low
+
+    while (true) {
+        lcd.fillScreen(TFT_BLACK);
+        lcd.setTextSize(1);
+        lcd.setTextColor(TFT_CYAN);
+        lcd.setCursor(5, 5);
+        lcd.println("=== GPIO TEST MODE ===");
+        lcd.setTextColor(TFT_WHITE);
+        lcd.setCursor(5, 20);
+        lcd.printf("MCP23017 @ 0x%02X", mcpSPI.getAddress());
+
+        // Read inputs
+        bool busy = mcpSPI.isBusy();
+        bool dio1 = mcpSPI.readDIO1();
+
+        // Show OUTPUTS
+        lcd.setTextColor(TFT_YELLOW);
+        lcd.setCursor(5, 40);
+        lcd.println("OUTPUTS (press key):");
+        lcd.setTextColor(TFT_WHITE);
+
+        lcd.setCursor(10, 55);
+        lcd.printf("R: RST (PA2) = %d", rstState ? 1 : 0);
+        lcd.setCursor(10, 67);
+        lcd.printf("N: NSS (PA0) = %d", nssState ? 1 : 0);
+        lcd.setCursor(10, 79);
+        lcd.printf("S: SCK (PA3) = %d", sckState ? 1 : 0);
+        lcd.setCursor(10, 91);
+        lcd.printf("M: MOSI(PA6) = %d", mosiState ? 1 : 0);
+
+        // Show INPUTS
+        lcd.setTextColor(TFT_YELLOW);
+        lcd.setCursor(130, 40);
+        lcd.println("INPUTS:");
+
+        lcd.setCursor(130, 55);
+        lcd.setTextColor(busy ? TFT_RED : TFT_GREEN);
+        lcd.printf("BUSY(PA5)=%d", busy ? 1 : 0);
+
+        lcd.setCursor(130, 67);
+        lcd.setTextColor(dio1 ? TFT_GREEN : TFT_WHITE);
+        lcd.printf("DIO1(PA4)=%d", dio1 ? 1 : 0);
+
+        // Instructions
+        lcd.setTextColor(TFT_MAGENTA);
+        lcd.setCursor(5, 110);
+        lcd.println("T:toggle all  Q:quit");
+
+        Serial.printf("OUT: RST=%d NSS=%d SCK=%d MOSI=%d | IN: BUSY=%d DIO1=%d\n",
+                      rstState, nssState, sckState, mosiState, busy, dio1);
+
+        // Wait for key
+        delay(100);
+        M5Cardputer.update();
+
+        if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
+            Keyboard_Class::KeysState keys = M5Cardputer.Keyboard.keysState();
+
+            if (keys.word.size() > 0) {
+                char c = keys.word[0];
+
+                if (c == 'r' || c == 'R') {
+                    rstState = !rstState;
+                    mcpSPI.setReset(rstState);
+                    Serial.printf("RST -> %d\n", rstState);
+                }
+                else if (c == 'n' || c == 'N') {
+                    nssState = !nssState;
+                    if (nssState) mcpSPI.deselect(); else mcpSPI.select();
+                    Serial.printf("NSS -> %d\n", nssState);
+                }
+                else if (c == 's' || c == 'S') {
+                    sckState = !sckState;
+                    // Toggle SCK by doing a dummy transfer bit
+                    mcpSPI.transfer(sckState ? 0xFF : 0x00);
+                    Serial.printf("SCK toggled\n");
+                }
+                else if (c == 'm' || c == 'M') {
+                    mosiState = !mosiState;
+                    mcpSPI.transfer(mosiState ? 0xFF : 0x00);
+                    Serial.printf("MOSI toggled\n");
+                }
+                else if (c == 't' || c == 'T') {
+                    // Test sequence: reset pulse
+                    Serial.println("=== RESET PULSE TEST ===");
+                    lcd.fillScreen(TFT_BLUE);
+                    lcd.setTextColor(TFT_WHITE);
+                    lcd.setCursor(10, 50);
+                    lcd.println("Sending RESET pulse...");
+                    lcd.println("Watch BUSY pin!");
+
+                    mcpSPI.setReset(true);  delay(100);
+                    Serial.printf("Before reset: BUSY=%d\n", mcpSPI.isBusy());
+
+                    mcpSPI.setReset(false); // RST low
+                    Serial.println("RST -> LOW");
+                    delay(100);
+
+                    mcpSPI.setReset(true);  // RST high
+                    Serial.println("RST -> HIGH");
+                    delay(200);
+
+                    Serial.printf("After reset: BUSY=%d\n", mcpSPI.isBusy());
+                    lcd.setCursor(10, 80);
+                    lcd.printf("BUSY after reset: %d", mcpSPI.isBusy());
+                    delay(2000);
+                }
+                else if (c == 'q' || c == 'Q') {
+                    return;  // Exit test mode
+                }
+            }
+        }
+    }
+}
+
 void setup() {
     // Initialize M5Cardputer
     auto cfg = M5.config();
@@ -333,6 +470,13 @@ void setup() {
     Serial.printf("I2C: SDA=%d, SCL=%d\n", I2C_SDA, I2C_SCL);
     Serial.printf("MCP23017 addr: 0x%02X\n", MCP23017_ADDR);
 
+    // Check if any key is pressed for GPIO test mode
+    M5Cardputer.update();
+    if (M5Cardputer.Keyboard.isPressed()) {
+        Serial.println("KEY PRESSED - Entering GPIO test mode!");
+        gpioTestMode();
+    }
+
     // Show splash screen
     M5Cardputer.Display.setTextSize(2);
     M5Cardputer.Display.setTextColor(COLOR_MY_MSG);
@@ -344,8 +488,11 @@ void setup() {
     M5Cardputer.Display.println("MCP23017 + DX-LR-30");
     M5Cardputer.Display.setCursor(50, 90);
     M5Cardputer.Display.printf("%.1f MHz", LORA_FREQUENCY);
+    M5Cardputer.Display.setCursor(20, 110);
+    M5Cardputer.Display.setTextColor(TFT_YELLOW);
+    M5Cardputer.Display.println("Hold key for GPIO test");
 
-    delay(1500);
+    delay(2000);
 
     // Debug on display
     M5Cardputer.Display.fillScreen(TFT_BLACK);
