@@ -245,92 +245,55 @@ void SX1262::setTxPower(int8_t power) {
 
 bool SX1262::transmit(const uint8_t* data, size_t length, uint32_t timeout_ms) {
     Serial.printf("TX: %d bytes\n", length);
-    auto& lcd = M5Cardputer.Display;
-
-    // Debug line at TOP of screen
-    auto showDebug = [&](uint16_t color, const char* fmt, ...) {
-        lcd.fillRect(0, 0, 240, 12, TFT_BLACK);
-        lcd.setTextColor(color);
-        lcd.setCursor(5, 2);
-        char buf[40];
-        va_list args;
-        va_start(args, fmt);
-        vsnprintf(buf, sizeof(buf), fmt, args);
-        va_end(args);
-        lcd.print(buf);
-        Serial.println(buf);
-    };
-
-    showDebug(TFT_YELLOW, "1.Standby");
 
     // Standby first
     standby();
     if (!_spi->waitBusy(1000)) {
-        showDebug(TFT_RED, "FAIL: Standby timeout");
+        Serial.println("TX: Standby timeout");
         return false;
     }
 
-    showDebug(TFT_YELLOW, "2.Clear IRQ");
+    // Clear IRQ flags
     clearIrqStatus(SX1262_IRQ_ALL);
     _spi->waitBusy();
 
-    showDebug(TFT_YELLOW, "3.IRQ params");
+    // Configure DIO1 for TX_DONE
     setDioIrqParams(SX1262_IRQ_TX_DONE | SX1262_IRQ_TIMEOUT,
                     SX1262_IRQ_TX_DONE | SX1262_IRQ_TIMEOUT, 0, 0);
     _spi->waitBusy();
 
-    showDebug(TFT_YELLOW, "4.Pkt params");
+    // Set packet params
     setPacketParams(LORA_PREAMBLE_LEN, _implicitHeader, length, true, false);
     _spi->waitBusy();
 
-    showDebug(TFT_YELLOW, "5.Write buf %d", length);
+    // Write data to buffer
     writeBuffer(0x00, data, length);
     _spi->waitBusy();
 
-    // Read state before TX
-    bool b0 = _spi->isBusy();
-    bool d0 = _spi->readDIO1();
-    showDebug(TFT_CYAN, "6.Pre-TX B=%d D=%d", b0, d0);
-
     // Send TX command
-    uint8_t txCmd[3] = {0, 0, 0};  // No timeout
+    uint8_t txCmd[3] = {0, 0, 0};
     sendCommand(SX1262_CMD_SET_TX, txCmd, 3);
 
     // Wait fixed time for TX to complete (SF9 BW125 ~300ms for short packet)
-    showDebug(TFT_GREEN, "7.TX sent, wait 500ms");
+    // Using time-based approach because bit-banged SPI is too slow for polling
     delay(500);
 
-    // Now check what happened
-    bool b1 = _spi->isBusy();
-    bool d1 = _spi->readDIO1();
+    // Check result
+    bool busy = _spi->isBusy();
+    bool dio1 = _spi->readDIO1();
     uint16_t irq = getIrqStatus();
-    uint8_t status = getStatus();
 
-    showDebug(TFT_WHITE, "8.B=%d D=%d I=%04X S=%02X", b1, d1, irq, status);
-    delay(1000);  // Show result
+    Serial.printf("TX: BUSY=%d DIO1=%d IRQ=0x%04X\n", busy, dio1, irq);
 
-    // Check if TX completed
-    if (irq & SX1262_IRQ_TX_DONE) {
-        showDebug(TFT_GREEN, "TX_DONE flag set!");
+    // TX complete if IRQ flag set, DIO1 high, or BUSY low
+    if ((irq & SX1262_IRQ_TX_DONE) || dio1 || !busy) {
         clearIrqStatus(SX1262_IRQ_ALL);
+        Serial.println("TX: OK");
         return true;
     }
 
-    if (d1) {
-        showDebug(TFT_GREEN, "DIO1 HIGH = done");
-        clearIrqStatus(SX1262_IRQ_ALL);
-        return true;
-    }
-
-    // If BUSY is low and enough time passed, assume success
-    if (!b1) {
-        showDebug(TFT_YELLOW, "BUSY low, assume OK");
-        clearIrqStatus(SX1262_IRQ_ALL);
-        return true;
-    }
-
-    // Still busy after 500ms - that's a problem
-    showDebug(TFT_RED, "FAIL: Still busy!");
+    // Still busy after 500ms - fail
+    Serial.println("TX: Timeout");
     standby();
     clearIrqStatus(SX1262_IRQ_ALL);
     return false;
