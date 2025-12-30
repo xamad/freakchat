@@ -244,64 +244,58 @@ void SX1262::setTxPower(int8_t power) {
 }
 
 bool SX1262::transmit(const uint8_t* data, size_t length, uint32_t timeout_ms) {
-    Serial.printf("TX: %d bytes, timeout=%dms\n", length, timeout_ms);
+    Serial.printf("TX: %d bytes\n", length);
 
     // Standby first
-    Serial.println("TX: Standby...");
     standby();
     if (!_spi->waitBusy(1000)) {
-        Serial.println("TX: Standby BUSY timeout!");
+        Serial.println("TX: Standby timeout");
         return false;
     }
 
     // Clear IRQ flags
-    Serial.println("TX: Clear IRQ...");
     clearIrqStatus(SX1262_IRQ_ALL);
     _spi->waitBusy();
 
-    // Update packet params with actual length
-    Serial.println("TX: Set packet params...");
+    // Update packet params
     setPacketParams(LORA_PREAMBLE_LEN, _implicitHeader, length, true, false);
     _spi->waitBusy();
 
     // Write data to buffer
-    Serial.println("TX: Write buffer...");
     writeBuffer(0x00, data, length);
     _spi->waitBusy();
 
     // Start TX
-    Serial.println("TX: Start TX...");
-    uint8_t txCmd[3] = {0, 0, 0};  // No timeout (single TX)
+    uint8_t txCmd[3] = {0, 0, 0};
     sendCommand(SX1262_CMD_SET_TX, txCmd, 3);
     if (!_spi->waitBusy(1000)) {
-        Serial.println("TX: SetTX BUSY timeout!");
+        Serial.println("TX: SetTX timeout");
         return false;
     }
 
-    // Wait for TX done
-    Serial.println("TX: Waiting for TX_DONE...");
+    // Wait for DIO1 to go HIGH (TX_DONE) - faster than polling IRQ register
+    Serial.println("TX: Waiting DIO1...");
     uint32_t start = millis();
-    uint16_t lastIrq = 0;
     while (millis() - start < timeout_ms) {
-        uint16_t irq = getIrqStatus();
-        if (irq != lastIrq) {
-            Serial.printf("TX: IRQ=0x%04X\n", irq);
-            lastIrq = irq;
-        }
-        if (irq & SX1262_IRQ_TX_DONE) {
-            Serial.printf("TX: Done in %dms\n", millis() - start);
-            clearIrqStatus(SX1262_IRQ_TX_DONE);
+        if (_spi->readDIO1()) {
+            // DIO1 went high - TX done!
+            Serial.printf("TX: Done (DIO1) %dms\n", millis() - start);
+            clearIrqStatus(SX1262_IRQ_ALL);
             return true;
         }
-        if (irq & SX1262_IRQ_TIMEOUT) {
-            clearIrqStatus(SX1262_IRQ_TIMEOUT);
-            Serial.println("TX: Timeout (IRQ)");
-            return false;
-        }
-        delay(10);  // Slower polling to reduce I2C traffic
+        delay(5);
     }
 
-    Serial.printf("TX: Timeout after %dms\n", millis() - start);
+    // Timeout - try reading IRQ register as fallback
+    uint16_t irq = getIrqStatus();
+    Serial.printf("TX: Timeout, IRQ=0x%04X\n", irq);
+
+    if (irq & SX1262_IRQ_TX_DONE) {
+        Serial.println("TX: Actually done (IRQ)");
+        clearIrqStatus(SX1262_IRQ_ALL);
+        return true;
+    }
+
     standby();
     return false;
 }
