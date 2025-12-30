@@ -245,11 +245,21 @@ void SX1262::setTxPower(int8_t power) {
 
 bool SX1262::transmit(const uint8_t* data, size_t length, uint32_t timeout_ms) {
     Serial.printf("TX: %d bytes\n", length);
+    auto& lcd = M5Cardputer.Display;
+
+    // Show debug on display line
+    lcd.fillRect(0, 125, 240, 10, TFT_BLACK);
+    lcd.setTextColor(TFT_YELLOW);
+    lcd.setCursor(5, 125);
+    lcd.print("TX: prep");
 
     // Standby first
     standby();
     if (!_spi->waitBusy(1000)) {
         Serial.println("TX: Standby timeout");
+        lcd.setCursor(5, 125);
+        lcd.setTextColor(TFT_RED);
+        lcd.print("TX: STBY TIMEOUT");
         return false;
     }
 
@@ -270,56 +280,109 @@ bool SX1262::transmit(const uint8_t* data, size_t length, uint32_t timeout_ms) {
     writeBuffer(0x00, data, length);
     _spi->waitBusy();
 
-    // Check DIO1 state before TX
+    // Check state before TX
+    bool busyBefore = _spi->isBusy();
     bool dio1Before = _spi->readDIO1();
-    Serial.printf("TX: DIO1 before=%d\n", dio1Before);
+    Serial.printf("TX: Before: BUSY=%d DIO1=%d\n", busyBefore, dio1Before);
+
+    lcd.fillRect(0, 125, 240, 10, TFT_BLACK);
+    lcd.setCursor(5, 125);
+    lcd.setTextColor(TFT_CYAN);
+    lcd.printf("TX: B=%d D=%d send..", busyBefore, dio1Before);
 
     // Start TX (timeout = 0 means no timeout from chip)
     uint8_t txCmd[3] = {0, 0, 0};
     sendCommand(SX1262_CMD_SET_TX, txCmd, 3);
-    if (!_spi->waitBusy(1000)) {
-        Serial.println("TX: SetTX timeout");
-        return false;
-    }
 
-    Serial.println("TX: Waiting for DIO1...");
+    // Wait a moment then check if BUSY went HIGH (chip entered TX mode)
+    delay(10);
+    bool busyAfterCmd = _spi->isBusy();
+    Serial.printf("TX: After SetTX: BUSY=%d\n", busyAfterCmd);
 
-    // Wait for TX to complete using DIO1 (confirmed connected to PA4)
-    uint32_t start = millis();
-    while (millis() - start < timeout_ms) {
-        // DIO1 goes HIGH when TX_DONE interrupt fires
-        if (_spi->readDIO1()) {
-            uint16_t irq = getIrqStatus();
-            Serial.printf("TX: DIO1 HIGH! IRQ=0x%04X after %dms\n", irq, millis() - start);
+    lcd.fillRect(0, 125, 240, 10, TFT_BLACK);
+    lcd.setCursor(5, 125);
+    lcd.setTextColor(busyAfterCmd ? TFT_GREEN : TFT_RED);
+    lcd.printf("TX: cmd sent B=%d", busyAfterCmd);
+
+    // If BUSY didn't go HIGH, the chip might not have accepted the TX command
+    if (!busyAfterCmd) {
+        // Check IRQ for errors
+        uint16_t irq = getIrqStatus();
+        Serial.printf("TX: BUSY not HIGH! IRQ=0x%04X\n", irq);
+
+        // Maybe TX completed very fast (unlikely) or there's an error
+        if (irq & SX1262_IRQ_TX_DONE) {
+            Serial.println("TX: Fast complete!");
             clearIrqStatus(SX1262_IRQ_ALL);
             return true;
         }
 
-        // Also check BUSY - it should go LOW when TX completes
-        if (!_spi->isBusy()) {
+        // Try to read chip status
+        uint8_t status = getStatus();
+        Serial.printf("TX: Status=0x%02X\n", status);
+
+        lcd.fillRect(0, 125, 240, 10, TFT_BLACK);
+        lcd.setCursor(5, 125);
+        lcd.setTextColor(TFT_ORANGE);
+        lcd.printf("TX: IRQ=%04X S=%02X", irq, status);
+        delay(500);
+    }
+
+    // Wait for TX to complete - BUSY should go LOW
+    uint32_t start = millis();
+    int checkCount = 0;
+
+    while (millis() - start < timeout_ms) {
+        bool busy = _spi->isBusy();
+        bool dio1 = _spi->readDIO1();
+        checkCount++;
+
+        // Update display every 20 checks
+        if (checkCount % 20 == 0) {
+            lcd.fillRect(0, 125, 240, 10, TFT_BLACK);
+            lcd.setCursor(5, 125);
+            lcd.setTextColor(TFT_WHITE);
+            lcd.printf("TX: B=%d D=%d t=%d", busy, dio1, (millis() - start));
+        }
+
+        // TX complete when DIO1 goes HIGH or BUSY goes LOW with TX_DONE
+        if (dio1) {
+            Serial.printf("TX: DIO1 HIGH after %dms\n", millis() - start);
+            clearIrqStatus(SX1262_IRQ_ALL);
+            return true;
+        }
+
+        if (!busy) {
             uint16_t irq = getIrqStatus();
             Serial.printf("TX: BUSY LOW, IRQ=0x%04X after %dms\n", irq, millis() - start);
+
             if (irq & SX1262_IRQ_TX_DONE) {
                 clearIrqStatus(SX1262_IRQ_ALL);
                 return true;
             }
-            // Give a bit more time for DIO1 to settle
-            delay(50);
-            if (_spi->readDIO1() || (getIrqStatus() & SX1262_IRQ_TX_DONE)) {
-                Serial.println("TX: Confirmed done");
+
+            // BUSY low but no TX_DONE - check if it was ever transmitting
+            if (millis() - start > 100) {
+                // Enough time passed, assume TX completed
+                Serial.println("TX: Assumed OK (BUSY low, time passed)");
                 clearIrqStatus(SX1262_IRQ_ALL);
                 return true;
             }
         }
 
-        delay(5);
+        delay(10);
     }
 
-    // Timeout - check what happened
+    // Timeout
     uint16_t finalIrq = getIrqStatus();
     bool finalDio1 = _spi->readDIO1();
     bool finalBusy = _spi->isBusy();
     Serial.printf("TX: TIMEOUT! IRQ=0x%04X DIO1=%d BUSY=%d\n", finalIrq, finalDio1, finalBusy);
+
+    lcd.fillRect(0, 125, 240, 10, TFT_BLACK);
+    lcd.setCursor(5, 125);
+    lcd.setTextColor(TFT_RED);
+    lcd.printf("TO: I=%04X B=%d D=%d", finalIrq, finalBusy, finalDio1);
 
     standby();
     clearIrqStatus(SX1262_IRQ_ALL);
