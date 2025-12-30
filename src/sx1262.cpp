@@ -257,6 +257,11 @@ bool SX1262::transmit(const uint8_t* data, size_t length, uint32_t timeout_ms) {
     clearIrqStatus(SX1262_IRQ_ALL);
     _spi->waitBusy();
 
+    // Configure DIO1 to trigger on TX_DONE
+    setDioIrqParams(SX1262_IRQ_TX_DONE | SX1262_IRQ_TIMEOUT,
+                    SX1262_IRQ_TX_DONE | SX1262_IRQ_TIMEOUT, 0, 0);
+    _spi->waitBusy();
+
     // Update packet params
     setPacketParams(LORA_PREAMBLE_LEN, _implicitHeader, length, true, false);
     _spi->waitBusy();
@@ -265,7 +270,11 @@ bool SX1262::transmit(const uint8_t* data, size_t length, uint32_t timeout_ms) {
     writeBuffer(0x00, data, length);
     _spi->waitBusy();
 
-    // Start TX
+    // Check DIO1 state before TX
+    bool dio1Before = _spi->readDIO1();
+    Serial.printf("TX: DIO1 before=%d\n", dio1Before);
+
+    // Start TX (timeout = 0 means no timeout from chip)
     uint8_t txCmd[3] = {0, 0, 0};
     sendCommand(SX1262_CMD_SET_TX, txCmd, 3);
     if (!_spi->waitBusy(1000)) {
@@ -273,30 +282,47 @@ bool SX1262::transmit(const uint8_t* data, size_t length, uint32_t timeout_ms) {
         return false;
     }
 
-    // Wait for DIO1 to go HIGH (TX_DONE) - faster than polling IRQ register
-    Serial.println("TX: Waiting DIO1...");
+    Serial.println("TX: Waiting for DIO1...");
+
+    // Wait for TX to complete using DIO1 (confirmed connected to PA4)
     uint32_t start = millis();
     while (millis() - start < timeout_ms) {
+        // DIO1 goes HIGH when TX_DONE interrupt fires
         if (_spi->readDIO1()) {
-            // DIO1 went high - TX done!
-            Serial.printf("TX: Done (DIO1) %dms\n", millis() - start);
+            uint16_t irq = getIrqStatus();
+            Serial.printf("TX: DIO1 HIGH! IRQ=0x%04X after %dms\n", irq, millis() - start);
             clearIrqStatus(SX1262_IRQ_ALL);
             return true;
         }
+
+        // Also check BUSY - it should go LOW when TX completes
+        if (!_spi->isBusy()) {
+            uint16_t irq = getIrqStatus();
+            Serial.printf("TX: BUSY LOW, IRQ=0x%04X after %dms\n", irq, millis() - start);
+            if (irq & SX1262_IRQ_TX_DONE) {
+                clearIrqStatus(SX1262_IRQ_ALL);
+                return true;
+            }
+            // Give a bit more time for DIO1 to settle
+            delay(50);
+            if (_spi->readDIO1() || (getIrqStatus() & SX1262_IRQ_TX_DONE)) {
+                Serial.println("TX: Confirmed done");
+                clearIrqStatus(SX1262_IRQ_ALL);
+                return true;
+            }
+        }
+
         delay(5);
     }
 
-    // Timeout - try reading IRQ register as fallback
-    uint16_t irq = getIrqStatus();
-    Serial.printf("TX: Timeout, IRQ=0x%04X\n", irq);
-
-    if (irq & SX1262_IRQ_TX_DONE) {
-        Serial.println("TX: Actually done (IRQ)");
-        clearIrqStatus(SX1262_IRQ_ALL);
-        return true;
-    }
+    // Timeout - check what happened
+    uint16_t finalIrq = getIrqStatus();
+    bool finalDio1 = _spi->readDIO1();
+    bool finalBusy = _spi->isBusy();
+    Serial.printf("TX: TIMEOUT! IRQ=0x%04X DIO1=%d BUSY=%d\n", finalIrq, finalDio1, finalBusy);
 
     standby();
+    clearIrqStatus(SX1262_IRQ_ALL);
     return false;
 }
 

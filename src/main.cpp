@@ -292,9 +292,47 @@ void handleChat() {
                     char buf[32];
                     sprintf(buf, "Freq: %.1f MHz", LORA_FREQUENCY);
                     chatUI.addSystemMessage(buf);
+                } else if (strcmp(msg, "/ping") == 0) {
+                    // Beacon test - send ping and show result on screen
+                    chatUI.addSystemMessage("Sending PING...");
+                    chatUI.clearInput();
+
+                    // Build a simple ping packet
+                    const char* pingMsg = "PING";
+                    size_t pktLen = buildPacket(chatUI.getNickname(), pingMsg, txPacket);
+
+                    // Show visual feedback during TX
+                    M5Cardputer.Display.fillRect(0, 0, 240, 20, TFT_BLUE);
+                    M5Cardputer.Display.setTextColor(TFT_WHITE);
+                    M5Cardputer.Display.setCursor(80, 5);
+                    M5Cardputer.Display.print("TX...");
+
+                    bool txOK = radio.transmit(txPacket, pktLen, 3000);
+
+                    // Show result
+                    if (txOK) {
+                        M5Cardputer.Display.fillRect(0, 0, 240, 20, TFT_GREEN);
+                        M5Cardputer.Display.setTextColor(TFT_BLACK);
+                        M5Cardputer.Display.setCursor(70, 5);
+                        M5Cardputer.Display.print("TX OK!");
+                        chatUI.addSystemMessage("PING sent OK!");
+                    } else {
+                        M5Cardputer.Display.fillRect(0, 0, 240, 20, TFT_RED);
+                        M5Cardputer.Display.setTextColor(TFT_WHITE);
+                        M5Cardputer.Display.setCursor(60, 5);
+                        M5Cardputer.Display.print("TX FAILED");
+                        chatUI.addSystemMessage("PING failed!");
+                    }
+                    delay(1500);
+                    chatUI.redraw();
+
+                    // Return to RX mode
+                    radio.startReceive();
+                    return;  // Don't process further
                 } else if (strcmp(msg, "/help") == 0) {
                     chatUI.addSystemMessage("/nick <name>");
                     chatUI.addSystemMessage("/freq - show freq");
+                    chatUI.addSystemMessage("/ping - TX test");
                 } else {
                     chatUI.addSystemMessage("Unknown command");
                 }
