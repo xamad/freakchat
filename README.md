@@ -1,118 +1,185 @@
-# LoRa Chat for M5Stack Cardputer
+# FreakChat - LoRa Chat for M5Stack Cardputer
 
 Chat application using **MCP23017 GPIO expander** for connecting **DX-LR-30** (SX1262) LoRa module to M5Stack Cardputer via bit-banged SPI over I2C.
 
-## Hardware Requirements
+## Hardware Required
 
-- M5Stack Cardputer
-- Waveshare MCP23017 GPIO Expander
-- DX-LR-30 LoRa Module (SX1262-based)
+- **M5Stack Cardputer** (ESP32-S3)
+- **Waveshare MCP23017 GPIO Expander** (I2C address 0x27 with A0=A1=A2=HIGH)
+- **DX-LR-30 LoRa Module** (SX1262-based, 868MHz)
 - Grove-to-Jumper cable
-- Jumper wires
+- Antenna for 868MHz
 
 ## Wiring Diagram
 
-### Cardputer to MCP23017 (I2C via Grove)
+### Cardputer Grove Port -> MCP23017 (I2C)
 
-| Cardputer Grove | MCP23017 |
-|-----------------|----------|
-| G1 (SCL)        | SCL      |
-| G2 (SDA)        | SDA      |
-| 3.3V            | VCC      |
-| GND             | GND      |
+| Cardputer Grove | MCP23017 | Description |
+|-----------------|----------|-------------|
+| G2              | SDA      | I2C Data    |
+| G1              | SCL      | I2C Clock   |
+| 3.3V            | VCC      | Power       |
+| GND             | GND      | Ground      |
 
-### MCP23017 to DX-LR-30 (SPI via GPIO)
+**Note:** MCP23017 address is 0x27 (A0=A1=A2 connected to VCC)
 
-| MCP23017 Pin | DX-LR-30 Pin | Function    |
-|--------------|--------------|-------------|
-| GPA0         | Pin 9 (NSS)  | Chip Select |
-| GPA1         | Pin 10 (SCK) | SPI Clock   |
-| GPA2         | Pin 11 (MISO)| SPI Data Out|
-| GPA3         | Pin 12 (MOSI)| SPI Data In |
-| GPA4         | Pin 17 (RST) | Reset       |
-| GPA5         | Pin 21 (BUSY)| Busy Status |
+### MCP23017 Port A -> DX-LR-30 (SX1262)
 
-### Power
+| MCP23017 | DX-LR-30    | Function         | Direction |
+|----------|-------------|------------------|-----------|
+| GPA0     | NSS (Pin 9) | SPI Chip Select  | OUTPUT    |
+| GPA1     | MISO (Pin 11)| SPI Data from LoRa | INPUT  |
+| GPA2     | SCK (Pin 10)| SPI Clock        | OUTPUT    |
+| GPA3     | RST (Pin 17)| Reset            | OUTPUT    |
+| GPA4     | DIO1 (Pin 13)| TX/RX Done IRQ  | INPUT     |
+| GPA5     | BUSY (Pin 21)| Busy Indicator  | INPUT     |
+| GPA6     | MOSI (Pin 12)| SPI Data to LoRa | OUTPUT   |
 
-- DX-LR-30 VCC (Pin 29) -> 3.3V from Cardputer
-- DX-LR-30 GND (Pin 18) -> Common GND
+### DX-LR-30 Power Connections
 
-## Configuration
+| DX-LR-30 | Connection | Description |
+|----------|------------|-------------|
+| VCC (Pin 1) | 3.3V    | Power (3.3V only!) |
+| GND (Pin 2) | GND     | Ground      |
+| ANT (Pin 7) | Antenna | 868MHz antenna |
 
-Edit `include/config.h` to customize:
+## Pin Summary (config.h)
 
-```cpp
-// I2C pins (Cardputer Grove)
-#define I2C_SDA         2
-#define I2C_SCL         1
+```c
+// I2C Configuration
+#define I2C_SDA         2       // Cardputer Grove G2
+#define I2C_SCL         1       // Cardputer Grove G1
+#define MCP23017_ADDR   0x27    // A0=A1=A2=HIGH
 
-// MCP23017 address (A0, A1, A2 grounded = 0x20)
-#define MCP23017_ADDR   0x20
+// MCP23017 Port A Pin Mapping
+#define MCP_LORA_NSS    0       // GPA0 - Chip Select (OUTPUT)
+#define MCP_LORA_MISO   1       // GPA1 - SPI Data from LoRa (INPUT)
+#define MCP_LORA_SCK    2       // GPA2 - SPI Clock (OUTPUT)
+#define MCP_LORA_RST    3       // GPA3 - Reset (OUTPUT)
+#define MCP_LORA_DIO1   4       // GPA4 - TX/RX Interrupt (INPUT)
+#define MCP_LORA_BUSY   5       // GPA5 - Busy indicator (INPUT)
+#define MCP_LORA_MOSI   6       // GPA6 - SPI Data to LoRa (OUTPUT)
+```
 
-// LoRa frequency (MHz)
-#define LORA_FREQUENCY  868.0   // Europe
-// #define LORA_FREQUENCY  915.0   // USA
-// #define LORA_FREQUENCY  433.0   // Asia
+## LoRa Configuration
+
+```c
+#define LORA_FREQUENCY      868.0   // MHz (Europe: 868, USA: 915, Asia: 433)
+#define LORA_BANDWIDTH      125.0   // kHz
+#define LORA_SPREADING      9       // SF7-SF12
+#define LORA_CODING_RATE    7       // 4/5 to 4/8
+#define LORA_SYNC_WORD      0x12    // Private network
+#define LORA_TX_POWER       14      // dBm (max 22)
+#define LORA_PREAMBLE_LEN   8       // Symbols
 ```
 
 ## Building
 
-### Prerequisites
-
-- PlatformIO CLI or IDE
-
-### Build Commands
-
 ```bash
+# Install PlatformIO
+pip install platformio
+
 # Build firmware
 pio run
 
-# Upload to device
-pio run --target upload
+# Upload to Cardputer (connected via USB)
+pio run -t upload
 
-# Monitor serial output
+# Monitor serial output (optional debug)
 pio device monitor
 ```
 
 ## Flashing Pre-built Firmware
 
-Use esptool.py to flash the pre-built `firmware.bin`:
-
 ```bash
 esptool.py --chip esp32s3 --port /dev/ttyUSB0 write_flash 0x10000 firmware.bin
 ```
 
-Or use the [M5Burner](https://m5stack.com/pages/download) application.
+Or use [M5Burner](https://m5stack.com/pages/download) application.
 
 ## Usage
 
-1. Power on the Cardputer
-2. Enter your nickname at startup
-3. Type messages using the keyboard
-4. Press ENTER to send
-5. Received messages show sender nickname and signal strength
+1. **Power on** - Radio initialization shows on screen (all steps should show OK)
+2. **Enter nickname** - Type your name and press ENTER
+3. **Chat** - Type messages and press ENTER to send
 
 ### Commands
 
-- `/nick <name>` - Change nickname
-- `/freq` - Show current frequency
-- `/help` - Show available commands
+| Command | Description |
+|---------|-------------|
+| `/ping` | Test TX - shows visual feedback (green=OK, red=fail) |
+| `/nick <name>` | Change nickname |
+| `/freq` | Show current frequency |
+| `/help` | Show available commands |
+
+### GPIO Test Mode
+
+Hold any key during boot to enter GPIO test mode for debugging wiring:
+- Shows real-time state of all MCP23017 pins
+- **R** - Toggle RST pin
+- **N** - Toggle NSS pin
+- **S** - Toggle SCK pin
+- **M** - Toggle MOSI pin
+- **T** - Send reset pulse and watch BUSY
+- **Q** - Quit and continue to chat
+
+## Technical Notes
+
+### Bit-banged SPI over I2C
+
+The SX1262 is connected via bit-banged SPI through the MCP23017:
+- Each SPI byte transfer requires 16+ I2C transactions
+- Effective SPI clock speed: ~10-50 kHz (very slow compared to hardware SPI)
+- I2C bus speed: 100 kHz (set low for reliability)
+
+### TX Timing
+
+Due to slow bit-banged SPI, TX uses a **time-based approach** instead of polling:
+- After sending SetTX command, wait 500ms fixed delay
+- Then check BUSY/DIO1/IRQ flags to confirm completion
+- This is necessary because polling would be too slow to catch state changes
+
+For SF9, BW125:
+- Symbol time: ~4ms
+- Preamble (8 symbols): ~50ms
+- Short message (~10 bytes): ~200-300ms total air time
+
+## Troubleshooting
+
+### "MCP23017 NOT FOUND"
+- Check I2C wiring: SDA -> G2, SCL -> G1
+- Verify MCP23017 address jumpers (A0/A1/A2 all HIGH = 0x27)
+- Check power connections (3.3V and GND)
+- The firmware auto-scans addresses 0x20-0x27
+
+### "Reset BUSY stuck"
+- Check RST wiring: GPA3 -> RST (Pin 17)
+- Check BUSY wiring: GPA5 -> BUSY (Pin 21)
+- Verify DX-LR-30 has proper 3.3V power
+- Use GPIO test mode (hold key at boot) to manually test pins
+
+### "SPI FAIL (0xFF 0xFF)"
+- Check SPI wiring:
+  - NSS: GPA0 -> Pin 9
+  - SCK: GPA2 -> Pin 10
+  - MOSI: GPA6 -> Pin 12
+  - MISO: GPA1 -> Pin 11
+- Verify all ground connections are solid
+
+### "TX Failed"
+- Make sure antenna is connected
+- Check DIO1 wiring: GPA4 -> DIO1 (Pin 13)
+- Use `/ping` command for visual TX test
+- Radio should show "RADIO OK" at startup
 
 ## Features
 
-- 868 MHz LoRa communication (configurable)
-- Simple chat protocol
-- RSSI signal strength indicator
+- LoRa communication on configurable frequency
+- Simple chat protocol with nickname
+- RSSI signal strength indicator on received messages
 - Nickname persistence (saved to flash)
-- Bit-banged SPI for flexibility
-
-## Technical Details
-
-- **SPI Mode**: Bit-banged through MCP23017 GPIO
-- **I2C Speed**: 400 kHz
-- **LoRa Settings**: SF9, BW125kHz, CR4/7
-- **Max Message Length**: 200 characters
-- **Display**: 240x135 pixels
+- Visual TX feedback
+- GPIO test mode for debugging
 
 ## License
 
@@ -120,6 +187,6 @@ MIT License
 
 ## Credits
 
-- M5Stack for the Cardputer
-- Semtech for SX1262 chip
+- M5Stack for the Cardputer hardware
+- Semtech for SX1262 LoRa chip
 - Waveshare for MCP23017 module
