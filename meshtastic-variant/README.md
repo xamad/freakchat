@@ -2,12 +2,39 @@
 
 Variant Meshtastic personalizzato per ESP32-S3 WROOM con modulo LoRa DX-LR-30 (SX1262) e display SPI 2".
 
+**Versione Firmware:** 2.5.15 (stable)
+
 ## Hardware Supportato
 
 - **MCU:** ESP32-S3 WROOM (o DevKitC-1)
 - **LoRa:** DX-LR-30 (SX1262, 868MHz)
 - **Display:** ST7789 2" SPI (320x240)
 - **Tastiera:** App Meshtastic via Bluetooth
+
+## Flash Rapido (Firmware Pre-Compilato)
+
+Il firmware pre-compilato è disponibile nella cartella `diy-esp32s3-dxlr30/firmware/`.
+
+### Usando esptool (consigliato per prima installazione)
+
+```bash
+# Collega ESP32-S3 via USB
+# Tieni premuto BOOT e premi RESET per entrare in bootloader mode
+
+# Flash completo (prima installazione)
+esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 921600 \
+    write_flash -z 0x0 firmware/firmware.factory.bin
+
+# Oppure flash update (aggiornamento)
+esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 921600 \
+    write_flash -z 0x10000 firmware/firmware.bin
+```
+
+### Usando PlatformIO (se hai già compilato)
+
+```bash
+pio run -e diy-esp32s3-dxlr30 -t upload
+```
 
 ## Schema Collegamento
 
@@ -30,7 +57,7 @@ Variant Meshtastic personalizzato per ESP32-S3 WROOM con modulo LoRa DX-LR-30 (S
 | ESP32-S3 | Display | Funzione |
 |----------|---------|----------|
 | GPIO35 | SCK | Clock |
-| GPIO37 | MOSI | Data |
+| GPIO37 | MOSI (SDA) | Data |
 | GPIO36 | CS | Chip Select |
 | GPIO38 | DC | Data/Command |
 | GPIO39 | RST | Reset |
@@ -45,13 +72,15 @@ Variant Meshtastic personalizzato per ESP32-S3 WROOM con modulo LoRa DX-LR-30 (S
 | GPIO8 | SDA |
 | GPIO9 | SCL |
 
-## Installazione
+## Compilazione Manuale
 
 ### 1. Clona il firmware Meshtastic
 
 ```bash
 git clone --recursive https://github.com/meshtastic/firmware.git
 cd firmware
+git checkout v2.5.15.79da236  # Versione stabile
+git submodule update --init --recursive
 ```
 
 ### 2. Copia il variant
@@ -61,51 +90,7 @@ cd firmware
 cp -r /path/to/freakchat/meshtastic-variant/diy-esp32s3-dxlr30 variants/
 ```
 
-### 3. Aggiungi la configurazione a platformio.ini
-
-Apri `platformio.ini` e aggiungi alla fine il contenuto di `platformio_entry.ini`:
-
-```ini
-[env:diy-esp32s3-dxlr30]
-extends = esp32s3_base
-board = esp32-s3-devkitc-1
-board_build.mcu = esp32s3
-
-board_build.flash_mode = dio
-board_build.flash_size = 4MB
-board_build.partitions = partitions-4MB.csv
-
-board_build.f_cpu = 240000000L
-build_flags =
-    ${esp32s3_base.build_flags}
-    -DARDUINO_USB_CDC_ON_BOOT=1
-    -DARDUINO_USB_MODE=1
-    -DBOARD_HAS_PSRAM=0
-    -I variants/diy-esp32s3-dxlr30
-    -DUSE_SX1262
-    -DSX126X_CS=10
-    -DSX126X_DIO1=2
-    -DSX126X_BUSY=4
-    -DSX126X_RESET=3
-    -DLORA_SCK=12
-    -DLORA_MISO=13
-    -DLORA_MOSI=11
-    -DUSE_ST7789
-    -DST7789_CS=36
-    -DST7789_RS=38
-    -DST7789_SDA=37
-    -DST7789_SCK=35
-    -DST7789_RESET=39
-    -DST7789_BL=40
-    -DI2C_SDA=8
-    -DI2C_SCL=9
-    -DVARIANT_H=\"variants/diy-esp32s3-dxlr30/variant.h\"
-
-lib_deps =
-    ${esp32s3_base.lib_deps}
-```
-
-### 4. Compila
+### 3. Compila
 
 ```bash
 # Installa PlatformIO se non l'hai
@@ -116,22 +101,6 @@ pio run -e diy-esp32s3-dxlr30
 
 # Il firmware sarà in:
 # .pio/build/diy-esp32s3-dxlr30/firmware.bin
-```
-
-### 5. Flash
-
-```bash
-# Collega ESP32-S3 via USB
-# Tieni premuto BOOT e premi RESET
-
-# Flash con esptool
-esptool.py --chip esp32s3 --port /dev/ttyUSB0 \
-    --baud 921600 \
-    write_flash -z 0x0 \
-    .pio/build/diy-esp32s3-dxlr30/firmware.bin
-
-# Oppure usa PlatformIO
-pio run -e diy-esp32s3-dxlr30 -t upload
 ```
 
 ## Configurazione Post-Flash
@@ -167,7 +136,6 @@ Dall'app, configura:
 - Antenna collegata?
 
 ### Display non funziona
-- Verifica User_Setup.h di TFT_eSPI (se usato)
 - Controlla pin DC e RST
 - Prova a invertire i colori in variant.h
 
@@ -175,13 +143,6 @@ Dall'app, configura:
 - Riavvia il dispositivo
 - Disabilita e riabilita Bluetooth sul telefono
 - Prova "Forget device" e rifare pairing
-
-## Modifica Pin
-
-Se il tuo cablaggio è diverso, modifica:
-
-1. **variant.h** - Le define dei pin
-2. **platformio_entry.ini** - I build_flags
 
 ## File Inclusi
 
@@ -191,12 +152,17 @@ meshtastic-variant/
 └── diy-esp32s3-dxlr30/
     ├── variant.h                # Definizioni hardware
     ├── pins_arduino.h           # Pin Arduino
-    └── platformio_entry.ini     # Config PlatformIO
+    ├── platformio.ini           # Config PlatformIO (da copiare in variants/)
+    └── firmware/
+        ├── firmware.bin         # Firmware v2.5.15 (update)
+        ├── firmware.factory.bin # Firmware v2.5.15 (full flash)
+        ├── bootloader.bin       # Bootloader
+        └── partitions.bin       # Partizioni
 ```
 
 ## Note
 
-- Questo variant è per **firmware Meshtastic ufficiale**
+- Firmware basato su **Meshtastic v2.5.15** (stable)
 - Compatibile con tutti i dispositivi Meshtastic
 - Usa l'app Meshtastic per messaggiare
 - Supporta mesh routing, encryption, GPS (se aggiunto)
